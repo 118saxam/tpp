@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Headset Button Toy</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #121212;
+            color: #00ff41;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            user-select: none;
+        }
+        h1 { margin-bottom: 20px; }
+        #status { margin-bottom: 30px; color: #888; }
+        button {
+            background: #00ff41;
+            color: #000;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            font-family: inherit;
+            cursor: pointer;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        button:active { transform: scale(0.95); }
+        .log {
+            margin-top: 20px;
+            font-size: 0.8rem;
+            color: #666;
+            max-height: 100px;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>HEADSET BUTTON TOY</h1>
+    <div id="status">Status: Idle (System Normal)</div>
+    <button id="toggleBtn">START HIJACK</button>
+    <div class="log" id="logArea"></div>
+
+    <!-- 
+      1. THE SOUND EFFECT 
+      Replace this src with any mp3 link you want. 
+      This is the 'ding' you hear on click.
+    -->
+    <audio id="sfx" src="https://actions.google.com/sounds/v1/cartoon/pop.ogg"></audio>
+
+    <!-- 
+      2. THE "SILENT" ANCHOR 
+      This is 5 seconds of silence. We loop this to keep the Media Session API active 
+      so the browser keeps listening to the headset even in the background.
+    -->
+    <audio id="silence" loop>
+        <source src="data:audio/mp3;base64,//NExAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//NExAAAAANIAAAAAExBTUUzLjEwMKqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" type="audio/mpeg">
+    </audio>
+
+    <script>
+        const btn = document.getElementById('toggleBtn');
+        const status = document.getElementById('status');
+        const logArea = document.getElementById('logArea');
+        const sfx = document.getElementById('sfx');
+        const silence = document.getElementById('silence');
+
+        let isHijacked = false;
+        let pressCount = 0;
+
+        // Helper to log actions
+        function log(msg) {
+            logArea.innerText = `> ${msg}\n` + logArea.innerText;
+            if (logArea.innerText.length > 500) logArea.innerText = logArea.innerText.substring(0, 500);
+        }
+
+        // The function that plays the sound
+        function playSfx() {
+            // Clone the node to allow overlapping sounds if you click fast
+            const sound = sfx.cloneNode();
+            sound.volume = 1.0; 
+            sound.play().catch(e => console.error("SFX Error:", e));
+            
+            // Visual feedback
+            document.body.style.backgroundColor = '#1a1a1a';
+            setTimeout(() => document.body.style.backgroundColor = '#121212', 100);
+            
+            pressCount++;
+            log(`Button Pressed! (Count: ${pressCount})`);
+        }
+
+        // Toggle the Hijack State
+        btn.addEventListener('click', async () => {
+            if (!isHijacked) {
+                // START HIJACK
+                try {
+                    await silence.play();
+                    setupMediaSession();
+                    isHijacked = true;
+                    btn.innerText = "STOP HIJACK";
+                    btn.style.background = "#ff4141";
+                    status.innerText = "Status: Hijacked (Headset controls this page)";
+                    log("Hijack Started. Browser now has Media Focus.");
+                } catch (err) {
+                    alert("Click failed to start audio context. Check browser permissions.");
+                }
+            } else {
+                // STOP HIJACK
+                silence.pause();
+                silence.currentTime = 0;
+                isHijacked = false;
+                btn.innerText = "START HIJACK";
+                btn.style.background = "#00ff41";
+                status.innerText = "Status: Idle";
+                
+                // Clear handlers to release focus back to system eventually
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.setActionHandler('play', null);
+                    navigator.mediaSession.setActionHandler('pause', null);
+                }
+                log("Hijack Stopped.");
+            }
+        });
+
+        // The Core Logic: Media Session API
+        function setupMediaSession() {
+            if ('mediaSession' in navigator) {
+                
+                // 1. Tell the device we are playing something (so the button works)
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: "Button Toy Active",
+                    artist: "Click to Ding",
+                    album: "Dopamine Hits",
+                    artwork: [
+                        { src: 'https://via.placeholder.com/512/00ff41/000000?text=PLAY', sizes: '512x512', type: 'image/png' }
+                    ]
+                });
+
+                // 2. Intercept "Play" (Headset button press)
+                navigator.mediaSession.setActionHandler('play', function() {
+                    // We prevent the silence from actually pausing/playing by doing nothing to 'silence' audio
+                    // We just play our SFX
+                    playSfx();
+                    
+                    // Force state to remain 'playing' so the browser doesn't think we stopped
+                    navigator.mediaSession.playbackState = "playing";
+                });
+
+                // 3. Intercept "Pause" (Headset button press toggles between these)
+                navigator.mediaSession.setActionHandler('pause', function() {
+                    playSfx();
+                    navigator.mediaSession.playbackState = "playing"; // Lie to the browser that we are still playing
+                });
+
+                // 4. Handle other keys just in case
+                navigator.mediaSession.setActionHandler('nexttrack', playSfx);
+                navigator.mediaSession.setActionHandler('previoustrack', playSfx);
+            }
+        }
+    </script>
+</body>
+</html>
